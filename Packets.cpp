@@ -1,6 +1,4 @@
 #include "Packets.hpp"
-#include <iostream>
-#include <queue>
 
 std::queue<PacketWriter*> SendPacketQueue;
 std::vector<uint16_t> BlockedList;
@@ -13,18 +11,200 @@ std::vector<uint16_t> RecvIgnoredList;
 std::vector<ModifyRule*> RecvModifyList;
 
 extern BOOL isDisconnected;
-extern BOOL isBottingSilver;
 
-short changeEndianness16(short val)
-{
-	return (val << 8) |          // left-shift always fills with zeros
-		((val >> 8) & 0x00ff); // right-shift sign-extends, so force to zero
+unsigned short Opcode;
+
+BOOL PacketHelper::CreatePacket(LPBYTE data, UINT length) {
+
+	memcpy(&Opcode, (void*)&data[0], sizeof(uint16_t));
+
+	Opcode = PacketHelper::changeEndianness16(Opcode);
+
+	if (Opcode == Opcodes::Send::Ping) //stuff we dont want logged
+	{
+		return FALSE;
+	}
+
+	for (auto & element : ModifyList) {
+
+		if ((uint16_t)element->opcode == (uint16_t)Opcode) { //found modified
+
+			//if (CheckPattern(element->pattern, &packet[2], packetLen - 2) == TRUE) {
+
+			//	//send a packet which wont cause a recursive send via the modify
+			//	//then return false to block it
+
+			//	//need createthread
+			//	thread_packet* pak = new thread_packet();
+			//	pak->packet = convertPacketFormatToString(element->replacement, packetLen - 2);
+			//	pak->size = packetLen - 2;
+
+			//	Thread = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)&_SendPacket, (LPVOID)pak, 0, 0);
+
+			//	return false;
+			//}
+
+			return TRUE;
+		}
+	}
+
+	for (auto & element : IgnoredList) {
+
+		if ((uint16_t)element == (uint16_t)Opcode) { //found ignored
+			return TRUE;
+		}
+	}
+
+	PacketWriter* p = new PacketWriter();
+
+	for (int i = 0; i < length; i++) {
+		p->Write<byte>(data[i]);
+	}
+
+	SendPacketQueue.push(p);
+
+	for (auto & element : BlockedList) {
+
+		if ((uint16_t)element == (uint16_t)Opcode) { //found blocked, still log it?
+			return FALSE;
+		}
+	}
+
+	return TRUE;
 }
 
-int rand_lim(int limit) {
-	/* return a random number between 0 and limit inclusive.
-	*/
+uint16_t RecvOpcode;
+BOOL PacketHelper::CreateRecvPacket(LPBYTE data, DWORD length) {
 
+	if (length == 0)
+		return FALSE;
+
+	memcpy(&RecvOpcode, (void*)&data[0], sizeof(uint16_t));
+
+	RecvOpcode = PacketHelper::changeEndianness16(RecvOpcode);
+
+	for (auto & element : ModifyList) {
+
+		if ((uint16_t)element->opcode == (uint16_t)RecvOpcode) { //found modified
+
+			//if (CheckPattern(element->pattern, &packet[2], packetLen - 2) == TRUE) {
+
+			//	//send a packet which wont cause a recursive send via the modify
+			//	//then return false to block it
+
+			//	//need createthread
+			//	thread_packet* pak = new thread_packet();
+			//	pak->packet = convertPacketFormatToString(element->replacement, packetLen - 2);
+			//	pak->size = packetLen - 2;
+
+			//	Thread = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)&_SendPacket, (LPVOID)pak, 0, 0);
+
+			//	return false;
+			//}
+
+			return TRUE;
+		}
+	}
+
+	for (auto & element : RecvIgnoredList) {
+
+		if ((uint16_t)element == (uint16_t)RecvOpcode) { //found ignored
+			return TRUE;
+		}
+	}
+
+	PacketWriter* p = new PacketWriter(); //push to queue
+
+	for (int i = 0; i < length; i++) {
+		p->Write<byte>(data[i]);
+	}
+
+	RecvPacketQueue.push(p);
+
+	for (auto & element : RecvBlockedList) {
+
+		if ((uint16_t)element == (uint16_t)RecvOpcode) { //found blocked, still log it?
+			return FALSE;
+		}
+	}
+
+	return FALSE;
+}
+
+uint16_t PacketHelper::changeEndianness16(UINT16 val)
+{
+	return (val << 8) | ((val >> 8) & 0x00ff); // right-shift sign-extends, so force to zero
+}
+
+int32_t PacketHelper::changeEndianness32(int32_t val)
+{
+	int32_t tmp = (val << 16) |
+		((val >> 16) & 0x00ffff);
+	return ((tmp >> 8) & 0x00ff00ff) | ((tmp & 0x00ff00ff) << 8);
+}
+
+std::string PacketHelper::randomStr(size_t size)
+{
+	std::string str("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
+
+	std::random_device rd;
+	std::mt19937 generator(rd());
+
+	std::shuffle(str.begin(), str.end(), generator);
+
+	return str.substr(0, size);    // assumes 32 < number of characters in str         
+}
+
+std::wstring PacketHelper::randomWStr(size_t size)
+{
+	std::wstring str(L"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
+
+	std::random_device rd;
+	std::mt19937 generator(rd());
+
+	std::shuffle(str.begin(), str.end(), generator);
+
+	return str.substr(0, size);    // assumes 32 < number of characters in str         
+}
+
+
+std::string PacketHelper::ToString(LPBYTE packetStr, int byteLength)
+{
+	if (byteLength <= 0)
+		return NULL;
+
+	std::string newStr = string();
+	CHAR* convertStr = (CHAR*)malloc(byteLength * 3); //* 3 since 00[ ] an extra 0 with a space for each byte in the str.
+
+	for (int i = 0; i < byteLength; i++) {
+		byte ch = packetStr[i];
+		sprintf(&convertStr[i], "%.2X", ch);
+		newStr.append(&convertStr[i]);
+		newStr.append(" ");
+	}
+
+	free(convertStr);
+	return newStr;
+}
+
+int PacketHelper::GetPacketLength(CHAR* input)
+{
+	int length = 0;
+
+	for (int i = 0; input[i] != '\0'; i++) {
+		if (input[i] == ' ')
+			length = length;
+		else
+			length++;
+	}
+
+	length = length / 2;
+
+	return length;
+}
+
+int PacketHelper::rand_lim(int limit)
+{
 	int divisor = RAND_MAX / (limit + 1);
 	int retval;
 
@@ -35,22 +215,22 @@ int rand_lim(int limit) {
 	return retval;
 }
 
-unsigned char* convertStringToPacketFormat(char* convertStr) {
-
-	char fixedString[4096 * 3] = { 0 };
+LPBYTE PacketHelper::ToPacketFormat(CHAR* input) //literally the worst old func left still... lmao
+{
+	char fixedString[2048] = { 0 };
 
 	//strip spaces, bad text
 	int i; int j = 0;
 
-	for (i = 0; convertStr[i] != '\0'; i++) {
-		if ((convertStr[i] >= 'A' && convertStr[i] <= 'F') || (convertStr[i] >= '0' && convertStr[i] <= '9') || (convertStr[i] >= 'a' && convertStr[i] <= 'f'))  {
-			fixedString[j] = convertStr[i];
+	for (i = 0; input[i] != '\0'; i++) {
+		if ((input[i] >= 'A' && input[i] <= 'F') || (input[i] >= '0' && input[i] <= '9') || (input[i] >= 'a' && input[i] <= 'f'))  {
+			fixedString[j] = input[i];
 			j++;
 		}
-		else if (convertStr[i] == ' ') {
+		else if (input[i] == ' ') {
 
 		}
-		else if (convertStr[i] == '*') {
+		else if (input[i] == '*') {
 
 			int random = rand_lim(15);
 
@@ -64,14 +244,13 @@ unsigned char* convertStringToPacketFormat(char* convertStr) {
 			j++;
 		}
 		else {
-			MessageBoxA(0, "Bad Hex Character found in sent packet.", "TOS PE (X.)", 0);
 			return NULL;
 		}
 
 	}
 
-	unsigned char* bytestring = (unsigned char*)malloc((sizeof(char)*j * 2) + 1);
-	ZeroMemory(bytestring, (sizeof(char)*j * 2) + 1);
+	LPBYTE bytestring = (unsigned char*)malloc((j * 2) + 1);
+
 	j = 0;
 
 	for (i = 0; fixedString[i] != '\0'; i++) {
@@ -125,201 +304,6 @@ unsigned char* convertStringToPacketFormat(char* convertStr) {
 			}
 		}
 	}
+
 	return bytestring;
-}
-
-char* convertPacketFormatToString(unsigned char* packetStr, int byteLength) {
-
-	if (byteLength < 2)
-		return NULL;
-
-	static char convertedStr[4096 * 5] = { 0 };
-
-	char* tmpStr = (char*)calloc(sizeof(char), 4095 * 5);
-
-	int i;
-	unsigned char ch;
-
-	for (i = 0; i < byteLength; i++) {
-		ch = packetStr[i];
-		sprintf(&convertedStr[i], "%.2X", ch);
-		strcat(&tmpStr[i], &convertedStr[i]);
-		strcat(tmpStr, " ");
-	}
-	return tmpStr;
-}
-
-int getPacketLength(char* grabbedTextPacket) {
-
-	int length = 0;
-	int i;
-
-	for (i = 0; grabbedTextPacket[i] != '\0'; i++) {
-		if (grabbedTextPacket[i] == ' ')
-			length = length;
-		else
-			length++;
-	}
-	length = length / 2;
-	return length;
-}
-
-void Send(char* grabbedTextPacket) {
-
-	OutPacket packet;
-	packet.dwLength = getPacketLength(grabbedTextPacket); //get packet len
-
-	unsigned char* outPacket = convertStringToPacketFormat(grabbedTextPacket); //parse packet to unsigned char* from char*
-
-	for (DWORD i = 0; i < packet.dwLength; i++) { //copy data bytes to data member of struct
-		packet.bData[i] = outPacket[i];
-	}
-
-	SendPacket(packet.bData, packet.dwLength);
-	free(outPacket);
-}
-
-void Recv(char* textPacket)
-{
-	OutPacket packet;
-	packet.dwLength = getPacketLength(textPacket); //get packet len
-
-	unsigned char* outPacket = convertStringToPacketFormat(textPacket); //parse packet to unsigned char* from char*
-
-	for (DWORD i = 0; i < packet.dwLength; i++) { //copy data bytes to data member of struct
-		packet.bData[i] = outPacket[i];
-	}
-
-	RecvPacket(packet.bData, packet.dwLength);
-	free(outPacket);
-}
-
-unsigned short Opcode;
-BOOL CreatePacket(LPBYTE data, DWORD length) {
-
-
-
-	memcpy(&Opcode, (void*)&data[0], sizeof(uint16_t));
-
-	Opcode = changeEndianness16(Opcode);
-
-	for (auto & element : ModifyList) {
-
-		if ((uint16_t)element->opcode == (uint16_t)Opcode) { //found modified
-
-			//if (CheckPattern(element->pattern, &packet[2], packetLen - 2) == TRUE) {
-
-			//	//send a packet which wont cause a recursive send via the modify
-			//	//then return false to block it
-
-			//	//need createthread
-			//	thread_packet* pak = new thread_packet();
-			//	pak->packet = convertPacketFormatToString(element->replacement, packetLen - 2);
-			//	pak->size = packetLen - 2;
-
-			//	Thread = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)&_SendPacket, (LPVOID)pak, 0, 0);
-
-			//	return false;
-			//}
-
-			return TRUE;
-		}
-	}
-
-
-	for (auto & element : IgnoredList) {
-
-		if ((uint16_t)element == (uint16_t)Opcode) { //found ignored
-			return TRUE;
-		}
-	}
-
-	//if (isBottingSilver == FALSE)
-	//{
-		PacketWriter* p = new PacketWriter();
-
-		for (int i = 0; i < length; i++) {
-			p->Write<byte>(data[i]);
-		}
-
-		SendPacketQueue.push(p);
-
-		for (auto & element : BlockedList) {
-
-			if ((uint16_t)element == (uint16_t)Opcode) { //found blocked, still log it?
-				return FALSE;
-			}
-		}
-
-		return TRUE;
-	//}
-	return FALSE;
-}
-
-uint16_t RecvOpcode;
-BOOL CreateRecvPacket(LPBYTE data, DWORD length) {
-
-	//if (length < 0)
-	//	return FALSE;
-
-	memcpy(&RecvOpcode, (void*)&data[0], sizeof(uint16_t));
-
-	RecvOpcode = changeEndianness16(RecvOpcode);
-
-	//lets do some blocking here.
-
-	if (RecvOpcode == 0xC074|| RecvOpcode == 0x342A || RecvOpcode == 0x2009)
-	{
-		return TRUE;
-	}
-
-
-	for (auto & element : ModifyList) {
-
-		if ((uint16_t)element->opcode == (uint16_t)RecvOpcode) { //found modified
-
-			//if (CheckPattern(element->pattern, &packet[2], packetLen - 2) == TRUE) {
-
-			//	//send a packet which wont cause a recursive send via the modify
-			//	//then return false to block it
-
-			//	//need createthread
-			//	thread_packet* pak = new thread_packet();
-			//	pak->packet = convertPacketFormatToString(element->replacement, packetLen - 2);
-			//	pak->size = packetLen - 2;
-
-			//	Thread = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)&_SendPacket, (LPVOID)pak, 0, 0);
-
-			//	return false;
-			//}
-
-			return TRUE;
-		}
-	}
-
-
-	for (auto & element : RecvIgnoredList) {
-
-		if ((uint16_t)element == (uint16_t)RecvOpcode) { //found ignored
-			return TRUE;
-		}
-	}
-
-
-	PacketWriter* p = new PacketWriter();
-
-	for (int i = 0; i < length; i++) {
-		p->Write<byte>(data[i]);
-	}
-
-	RecvPacketQueue.push(p);
-
-	for (auto & element : RecvBlockedList) {
-
-		if ((uint16_t)element == (uint16_t)RecvOpcode) { //found blocked, still log it?
-			return FALSE;
-		}
-	}
-
-	return FALSE;
 }
