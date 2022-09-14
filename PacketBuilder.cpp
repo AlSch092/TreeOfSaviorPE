@@ -8,7 +8,7 @@ PacketWriter* Builder::RangedAttack(uint16_t skillId, int nMobs, uint32_t* monst
 
 	for (int i = 0; i < nMobs; i++)
 	{
-		p->Write<uint32_t>(monsterIds[0]);
+		p->Write<uint32_t>(monsterIds[i]);
 	}
 
 	p->WriteZeros(2);
