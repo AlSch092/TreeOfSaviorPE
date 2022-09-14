@@ -1,9 +1,11 @@
 #pragma once
+#include <Windows.h>
 #include <string>
 #include <iostream>     // std::cout, std::endl
 #include <iomanip>      // std::setfill, std::setw
 #include <stdint.h>
 #include <sstream>
+
 using namespace std;
 typedef uint16_t header_t;
 
