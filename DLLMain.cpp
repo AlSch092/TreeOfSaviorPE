@@ -11,7 +11,7 @@ VOID Startup()
 {
 	Sleep(500);
 
-	//DWORD dwOld; //get rid of gay NtdllPVM hook
+	//DWORD dwOld; //get rid of NtdllPVM hook
 	//DWORD ntdll_ZwProtectVirtualMemory = (DWORD)GetProcAddress(GetModuleHandle(L"ntdll"), "ZwProtectVirtualMemory");
 	//VirtualProtect((void*)ntdll_ZwProtectVirtualMemory, 5, PAGE_EXECUTE_WRITECOPY, &dwOld);
 	//memcpy((void*)ntdll_ZwProtectVirtualMemory, (void*) "\xB8\x50\x00\x00\x00", 5);
